@@ -1,91 +1,76 @@
-def mark_attendance(student_id, date, status):
-    if student_id not in students:
-        print(f"Student ID '{student_id}' not found.")
-        return
-    if date in CLASS_CANCELLED_DATES:
-        print(f"Class was cancelled on {date} ({CLASS_CANCELLED_DATES[date]}). No attendance recorded.")
-        return
-    status = status.lower()
-    if status not in ["present", "absent"]:
-        print("Status must be 'present' or 'absent'.")
-        return
-    attendance[student_id][date] = status
-    print(f"Marked {students[student_id]['name']} as {status} on {date}.")
-
-
-def get_summary(student_id):
-    if student_id not in students:
-        print(f"Student ID '{student_id}' not found.")
-        return None
-    records = attendance[student_id]
-    total = len(records)
-    present = sum(1 for s in records.values() if s == "present")
-    absent = total - present
-    return {"name": students[student_id]["name"], "present": present, "absent": absent, "total": total}
-
-
-def print_all_summaries():
-    print(f"\n{'Student':<22}{'Present':<10}{'Absent':<10}{'Total':<10}")
-    print("-" * 52)
-    for sid in students:
-        summary = get_summary(sid)
-        print(f"{summary['name']:<22}{summary['present']:<10}{summary['absent']:<10}{summary['total']:<10}")
-
-
-def print_student_detail(student_id):
-    if student_id not in students:
-        print(f"Student ID '{student_id}' not found.")
-        return
-    name = students[student_id]["name"]
-    print(f"\nAttendance detail for {name} (ID: {student_id}):")
-    for date in sorted(attendance[student_id].keys()):
-        status = attendance[student_id][date]
-        marker = "✓" if status == "present" else "✗"
-        print(f"  {date}: {marker} {status}")
-
-
-def list_cancelled_classes():
-    print("\nCancelled class sessions:")
-    for date, reason in sorted(CLASS_CANCELLED_DATES.items()):
-        print(f"  {date}: {reason}")
-
-
-# ─────────────────────────────────────────────────────────────
-# NEW: ABSENCE PATTERN ANALYSIS
-# ─────────────────────────────────────────────────────────────
-
-def get_weekday_absence_pattern(student_id):
+def calculate_risk_score(student_id):
     """
-    Returns a dict {weekday_name: absence_count} showing which days
-    of the week a student tends to miss class on.
+    Produces a 0-100 'absence risk' score for a student using two signals:
+      1. overall_absence_rate  - absences over the whole recorded history
+      2. recent_absence_rate   - absences over just the last RECENT_WINDOW sessions
+
+    recent_absence_rate is weighted more heavily (70%) than the overall
+    rate (30%) so a student who is slipping lately scores higher than
+    their long-term average would suggest. This is a transparent,
+    explainable heuristic — not a trained statistical model.
     """
     if student_id not in attendance:
-        return {}
-    pattern = {}
-    for date_str, status in attendance[student_id].items():
-        if status != "absent":
-            continue
-        weekday = datetime.strptime(date_str, "%Y-%m-%d").strftime("%A")
-        pattern[weekday] = pattern.get(weekday, 0) + 1
-    return pattern
-
-
-def most_missed_weekday(student_id):
-    pattern = get_weekday_absence_pattern(student_id)
-    if not pattern:
         return None
-    return max(pattern, key=pattern.get)
+
+    records = attendance[student_id]
+    if not records:
+        return 0
+
+    dates_sorted = sorted(records.keys())
+    total = len(dates_sorted)
+    total_absences = sum(1 for d in dates_sorted if records[d] == "absent")
+    overall_rate = total_absences / total
+
+    recent_dates = dates_sorted[-RECENT_WINDOW:]
+    recent_absences = sum(1 for d in recent_dates if records[d] == "absent")
+    recent_rate = recent_absences / len(recent_dates)
+
+    score = (0.3 * overall_rate + 0.7 * recent_rate) * 100
+    return round(score, 1)
 
 
-def print_absence_patterns():
-    print("\n=== Absence Pattern by Weekday ===")
+def risk_level(score):
+    if score is None:
+        return "Unknown"
+    if score >= RISK_HIGH:
+        return "High"
+    if score >= RISK_MEDIUM:
+        return "Medium"
+    return "Low"
+
+
+def get_at_risk_students():
+    """Returns list of (student_id, name, score, level) sorted by score descending."""
+    results = []
     for sid in students:
+        score = calculate_risk_score(sid)
+        level = risk_level(score)
+        results.append((sid, students[sid]["name"], score, level))
+    results.sort(key=lambda x: x[2], reverse=True)
+    return results
+
+
+def print_risk_report():
+    print(f"\n{'Student':<22}{'Risk Score':<14}{'Level':<10}{'Most Missed Day':<18}")
+    print("-" * 64)
+    for sid, name, score, level in get_at_risk_students():
+        missed_day = most_missed_weekday(sid) or "-"
+        marker = " ⚠" if level == "High" else ""
+        print(f"{name:<22}{score:<14}{level:<10}{missed_day:<18}{marker}")
+
+
+def print_alerts():
+    """Prints one-line alerts for students at Medium or High risk."""
+    at_risk = [r for r in get_at_risk_students() if r[3] in ("Medium", "High")]
+    print("\n=== Attendance Alerts ===")
+    if not at_risk:
+        print("  No students currently at risk. ✓")
+        return
+    for sid, name, score, level in at_risk:
         missed_day = most_missed_weekday(sid)
-        name = students[sid]["name"]
-        if missed_day:
-            print(f"  {name:<22} tends to miss {missed_day}s")
-        else:
-            print(f"  {name:<22} no absences recorded")
+        tip = f" — tends to miss {missed_day}s." if missed_day else ""
+        icon = "🔴" if level == "High" else "🟡"
+        print(f"  {icon} {name}: {level} risk ({score}/100).{tip}")
 
 
 # ─────────────────────────────────────────────────────────────
@@ -102,6 +87,8 @@ def main():
 
     print_all_summaries()
     print_absence_patterns()
+    print_risk_report()
+    print_alerts()
 
     print_student_detail("1001")
     list_cancelled_classes()
@@ -115,5 +102,5 @@ def main():
     mark_attendance("1001", "2026-07-16", "present")
 
 
-if ــnameــ" ==  ــmainــ":
+if ــnameــ" == ــmainــ":
     main()
