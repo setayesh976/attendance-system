@@ -74,6 +74,26 @@ def print_alerts():
 
 
 # ─────────────────────────────────────────────────────────────
+# NEW: SIMPLE TEXT-BASED ATTENDANCE CHART
+# ─────────────────────────────────────────────────────────────
+
+def print_attendance_chart():
+    """
+    Prints a simple horizontal bar chart (using block characters) showing
+    each student's attendance rate. Kept as plain text so it works in
+    any terminal, without needing a plotting library.
+    """
+    print("\n=== Attendance Rate Chart ===")
+    bar_width = 40
+    for sid in students:
+        summary = get_summary(sid)
+        rate = summary["present"] / summary["total"] if summary["total"] else 0
+        filled = round(rate * bar_width)
+        bar = "█" * filled + "░" * (bar_width - filled)
+        print(f"  {summary['name']:<18} [{bar}] {rate*100:5.1f}%")
+
+
+# ─────────────────────────────────────────────────────────────
 # MAIN
 # ─────────────────────────────────────────────────────────────
 
@@ -86,6 +106,7 @@ def main():
         print(f"  {sid}: {info['name']} ({info['gender']})")
 
     print_all_summaries()
+    print_attendance_chart()
     print_absence_patterns()
     print_risk_report()
     print_alerts()
@@ -93,7 +114,8 @@ def main():
     print_student_detail("1001")
     list_cancelled_classes()
 
-    # demonstrate adding a new attendance record
+
+# demonstrate adding a new attendance record
     print()
     mark_attendance("1003", "2026-07-27", "present")
 
@@ -102,5 +124,5 @@ def main():
     mark_attendance("1001", "2026-07-16", "present")
 
 
-if ــnameــ" == ــmainــ":
+if ــname__ == "__main__":
     main()
